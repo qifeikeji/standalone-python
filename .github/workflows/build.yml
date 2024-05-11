@@ -1,95 +1,61 @@
 name: "release"
 
-on: {
-    "push": {
-        "branches": ["release"],
-    }
-}
+on:
+  push:
+    branches: ["release"]
 
-jobs: {
-    build: {
-        "runs-on": "ubuntu-latest",
-        "strategy": {
-            "matrix": {
-                "architecture": ["x86_64", "x86"],
-                "version": ["3.12", "3.11", "3.10"],
-            },
-        },
-        "steps": [
-            {
-                "name": "Checkout code",
-                "uses": "actions/checkout@v4",
-            },
-            {
-                "name": "Build docker image",
-                "run": "docker build -t release-${{ github.ref_name }}:${{ matrix.version }}-${{ matrix.architecture }} ./${{ matrix.version }}/${{ matrix.architecture }}/",
-            },
-            {
-                "name": "Save docker image as tar file",
-                "run": "docker save release-${{ github.ref_name }}:${{ matrix.version }}-${{ matrix.architecture }} > release-${{ matrix.version }}-${{ matrix.architecture }}.tar",
-            },
-            {
-                "name": "Figure out the /opt/python directory from the tar file",
-                "run": "./ci/packing_release_tar.sh release-${{ matrix.version }}-${{ matrix.architecture }}.tar",
-            },
-            {
-                "name": "Gzip to save space",
-                "run": "sudo apt-get install gzip -y && gzip -9 build/release-${{ matrix.version }}-${{ matrix.architecture }}.tar",
-            },
-            {
-                "name": "Release the tar file to artifacts",
-                "uses": "actions/upload-artifact@v4",
-                "with": {
-                    "name": "release-${{ matrix.version }}-${{ matrix.architecture }}.tar.gz",
-                    "path": "build/release-${{ matrix.version }}-${{ matrix.architecture }}.tar.gz",
-                },
-            },
-        ],
-    },
-    release: {
-        "runs-on": "ubuntu-latest",
-        "needs": "build",
-        "steps": [
-            {
-                "name": "Checkout code",
-                "uses": "actions/checkout@v4",
-            },
-            {
-                "name": "Create release tag",
-                "run": "git config --local user.email 'ci@scc-net.tw' && \
-                    git config --local user.name 'CI' && \
-                    echo release-$(date '+%Y-%m-%d') > .release_tag && \
-                    git tag $(cat .release_tag) && \
-                    git push origin --tags",
-                "env": {
-                    "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
-                },
-            },
-            {
-                "name": "Download release tar files",
-                "uses": "actions/download-artifact@v4",
-                "with": {
-                    "path": "artifacts/",
-                },
-            },
-            {   "name": "Set env TAG_NAME",
-                "run": "echo ::set-env name=TAG_NAME::$(cat .release_tag)",
-                "env": {
-                    "ACTIONS_ALLOW_UNSECURE_COMMANDS": "true",
-                },
-            },
-            {
-                "name": "Create GitHub release",
-                "uses": ncipollo/release-action@v1,
-                "with": {
-                    "tag": "${{ env.TAG_NAME }}",
-                    "artifacts": "artifacts/*/*.tar.gz",
-                },
-                "env": {
-                    "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}",
-                    "TAG_NAME": "${{ env.TAG_NAME }}",
-                },
-            },
-        ]
-    }
-}
+jobs:
+  build:
+    runs-on: "ubuntu-latest"
+    strategy:
+      matrix:
+        architecture: ["x86_64", "x86"]
+        version: ["3.12", "3.11", "3.10"]
+    steps:
+      - name: "Checkout code"
+        uses: "actions/checkout@v4"
+      - name: "Build docker image"
+        run: "docker build -t release-${{ github.ref_name }}:${{ matrix.version }}-${{ matrix.architecture }} ./${{ matrix.version }}/${{ matrix.architecture }}/"
+      - name: "Save docker image as tar file"
+        run: "docker save release-${{ github.ref_name }}:${{ matrix.version }}-${{ matrix.architecture }} > release-${{ matrix.version }}-${{ matrix.architecture }}.tar"
+      - name: "Figure out the /opt/python directory from the tar file"
+        run: "./ci/packing_release_tar.sh release-${{ matrix.version }}-${{ matrix.architecture }}.tar"
+      - name: "Gzip to save space"
+        run: "sudo apt-get install gzip -y && gzip -9 build/release-${{ matrix.version }}-${{ matrix.architecture }}.tar"
+      - name: "Release the tar file to artifacts"
+        uses: "actions/upload-artifact@v4"
+        with:
+          name: "release-${{ matrix.version }}-${{ matrix.architecture }}.tar.gz"
+          path: "build/release-${{ matrix.version }}-${{ matrix.architecture }}.tar.gz"
+
+  release:
+    runs-on: "ubuntu-latest"
+    needs: "build"
+    steps:
+      - name: "Checkout code"
+        uses: "actions/checkout@v4"
+      - name: "Create release tag"
+        run: |
+          git config --local user.email 'ci@scc-net.tw' && \
+          git config --local user.name 'CI' && \
+          echo release-$(date '+%Y-%m-%d') > .release_tag && \
+          git tag $(cat .release_tag) && \
+          git push origin --tags
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      - name: "Download release tar files"
+        uses: "actions/download-artifact@v4"
+        with:
+          path: "artifacts/"
+      - name: "Set env TAG_NAME"
+        run: "echo ::set-env name=TAG_NAME::$(cat .release_tag)"
+        env:
+          ACTIONS_ALLOW_UNSECURE_COMMANDS: "true"
+      - name: "Create GitHub release"
+        uses: "ncipollo/release-action@v1"
+        with:
+          tag: "${{ env.TAG_NAME }}"
+          artifacts: "artifacts/*/*.tar.gz"
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          TAG_NAME: "${{ env.TAG_NAME }}"
